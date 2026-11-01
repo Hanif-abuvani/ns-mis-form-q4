@@ -45,8 +45,10 @@ button.danger{background:transparent;color:var(--danger);border-color:var(--dang
 .nav button{flex:1}
 .entry{border:1px dashed var(--border);border-radius:12px;padding:14px;margin-bottom:14px}
 .entry-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-weight:600}
+.entry-divider{height:4px;border-radius:2px;background:var(--c, var(--accent));margin:4px 0 14px}
 .sub-head{font-weight:700;margin:16px 0 8px;color:var(--accent)}
 .hint{font-size:.9rem;color:var(--muted);margin-top:6px;word-break:break-all}
+.field-error{color:var(--danger);font-size:.9rem;font-weight:600;margin-top:6px}
 #status{margin-top:12px;font-weight:600;min-height:1.3em}
 </style>
 </head>
@@ -64,9 +66,9 @@ const FILE_ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,application/pdf'
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 const REPORT = {
-  title: 'NS MIS Q3 (Jul-Sep 2026)',
+  title: 'NS MIS Q4 (Oct-Dec 2026)',
   year: '2026',
-  months: ['July', 'August', 'September'],
+  months: ['October', 'November', 'December'],
 };
 
 const F = (key, label, type = 'text', extra = {}) => ({ key, label, type, ...extra });
@@ -77,7 +79,7 @@ const personFields = (p, label) => [
   F(`${p}_surname`, `${label}'s surname`),
   F(`${p}_jk_centre`, `${label}'s JK centre`),
   F(`${p}_status`, `${label}'s status`, 'select', { options: ['Single', 'Divorced', 'Widow'] }),
-  F(`${p}_age`, `${label}'s age`, 'number'),
+  F(`${p}_age`, `${label}'s age`, 'number', { max: 120 }),
 ];
 
 const REASONS = ['For work (jobs)', 'For business', 'For REC / Jamatkhana', 'For education', 'For better housing / safer neighbourhood', 'For marriage', 'Other'];
@@ -96,7 +98,7 @@ const SECTIONS = {
     title: 'Relationship Details',
     fields: [
       F('relationship_type', 'Type of relation', 'radio', { options: ['Engagement', 'Marriage', 'Divorce', 'Re-Marriage', 'Other Cast Marriage'] }),
-      F('relationship_date', 'Date', 'date'),
+      F('relationship_date', 'Date', 'date', { past5: true }),
       F('relationship_between', 'Between', 'select', { options: ['Ismaili Boy and Girl', 'Ismaili Boy with Non Ismaili Muslim', 'Ismaili Girl with Non Ismaili Muslim', 'Ismaili Boy with Non Muslim', 'Ismaili Girl with Non Muslim'] }),
       { heading: 'Groom' },
       ...personFields('groom', 'Groom'),
@@ -114,7 +116,7 @@ const SECTIONS = {
       F('birth_mother_name', "Mother's name"),
       F('birth_surname', 'Surname'),
       F('birth_gender', 'Gender', 'radio', { options: ['Male', 'Female'] }),
-      F('birth_date', 'Birth date', 'date'),
+      F('birth_date', 'Birth date', 'date', { past5: true }),
       F('birth_mobile', 'Mobile number', 'tel', { digits: 10 }),
       F('birth_place', 'Birth place'),
     ],
@@ -126,9 +128,9 @@ const SECTIONS = {
       F('death_first_name', "Dead person's first name"),
       F('death_father_husband_name', "Dead person's Father/Husband name"),
       F('death_surname', "Dead person's surname"),
-      F('death_age', 'Age', 'number'),
+      F('death_age', 'Age', 'number', { max: 120 }),
       F('death_gender', 'Gender', 'radio', { options: ['Male', 'Female'] }),
-      F('death_date', 'Death date', 'date'),
+      F('death_date', 'Death date', 'date', { past5: true }),
       F('death_type', 'Death type', 'radio', { options: ['Natural', 'Accidental', 'Suicide'] }),
       F('death_reason', 'Reason of death'),
       F('death_place', 'Place of death'),
@@ -215,6 +217,7 @@ function renderField(field, obj, path, onChange) {
 
   const changed = () => {
     wrap.classList.remove('invalid');
+    wrap.querySelector('.field-error')?.remove();
     if (onChange) onChange();
   };
 
@@ -258,17 +261,31 @@ function renderField(field, obj, path, onChange) {
     wrap.append(inp, hint);
   } else {
     const props = { type: field.type };
-    if (field.type === 'number') Object.assign(props, { min: '0', inputMode: 'numeric' });
+    if (field.type === 'number') Object.assign(props, { min: '0', inputMode: 'numeric', ...(field.max ? { max: String(field.max) } : {}) });
     if (field.digits) Object.assign(props, { inputMode: 'numeric', maxLength: field.digits });
+    if (field.past5) Object.assign(props, dateLimits());
     const inp = el('input', props);
     inp.value = obj[field.key] || '';
     inp.addEventListener('input', () => {
       if (field.type === 'number' || field.digits) inp.value = inp.value.replace(/\D/g, '');
       if (field.digits) inp.value = inp.value.slice(0, field.digits);
+      if (field.type === 'text') inp.value = inp.value.replace(/[^A-Za-z ]/g, '');
       obj[field.key] = inp.value;
       changed();
     });
-    wrap.append(inp);
+    if (field.digits) {
+      const note = el('div', { className: 'hint' });
+      const showCount = () => {
+        const n = inp.value.length;
+        const short = n > 0 && n < field.digits;
+        note.textContent = short ? `Enter ${field.digits} digits (${n} entered)` : '';
+        note.style.color = short ? 'var(--danger)' : '';
+      };
+      inp.addEventListener('input', showCount);
+      wrap.append(inp, note);
+    } else {
+      wrap.append(inp);
+    }
   }
   return wrap;
 }
@@ -286,6 +303,7 @@ function renderEntries(sk) {
         onclick: () => { list.splice(idx, 1); renderEntries(sk); },
       }));
     }
+    if (idx > 0) box.append(el('div', { className: 'entry-divider' }));
     const card = el('div', { className: 'entry' }, head);
     sec.fields.forEach(field => card.append(renderField(field, entry, `${sk}_${idx}`)));
     box.append(card);
@@ -315,12 +333,28 @@ function stepOwns(path, step) {
   return false;
 }
 
+function localIsoDate(d) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function dateLimits() {
+  const min = new Date();
+  min.setFullYear(min.getFullYear() - 5);
+  return { min: localIsoDate(min), max: localIsoDate(new Date()) };
+}
+
 function isFilled(field, val) {
   const v = (val ?? '').toString().trim();
   if (!v) return !!field.optional;
-  if (field.type === 'number') return /^\d+$/.test(v);
+  if (field.type === 'number') return /^\d+$/.test(v) && (!field.max || Number(v) <= field.max);
   if (field.type === 'email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
   if (field.digits) return v.length === field.digits && /^\d+$/.test(v);
+  if (field.past5) {
+    const { min, max } = dateLimits();
+    return v >= min && v <= max;
+  }
+  if (field.type === 'text') return /^[A-Za-z ]+$/.test(v);
   return true;
 }
 
@@ -360,7 +394,11 @@ function buildRows() {
     g.sections.forEach(sk => state.entries[sk].forEach((e, i) => {
       const values = trimValues(e);
       if (i === 0) Object.assign(primary, values);
-      else extras.push({ ...base, [`${g.key}_available`]: 'Yes', ...values });
+      else extras.push({
+        ...base,
+        ...Object.fromEntries(GATES.map(x => [`${x.key}_available`, x.key === g.key ? 'Yes' : 'No'])),
+        ...values,
+      });
     }));
   });
 
@@ -391,18 +429,52 @@ function setStatus(text, isError) {
   status.style.color = isError ? 'var(--danger)' : 'var(--accent)';
 }
 
-const DIGIT_KEYS = Object.values(SECTIONS).flatMap(s => s.fields).filter(f => f.digits).map(f => f.key);
+const ALL_FIELDS = [...SETUP_FIELDS, ...Object.values(SECTIONS).flatMap(s => s.fields)];
+const DIGIT_KEYS = ALL_FIELDS.filter(f => f.digits).map(f => f.key);
+const MAX_KEYS = ALL_FIELDS.filter(f => f.max).map(f => f.key);
+const TEXT_KEYS = ALL_FIELDS.filter(f => f.type === 'text').map(f => f.key);
+const DATE_KEYS = ALL_FIELDS.filter(f => f.past5).map(f => f.key);
 
 function validationMessage(bad) {
-  return bad.some(p => DIGIT_KEYS.includes(p.split('|')[1]))
-    ? 'Mobile number must be exactly 10 digits.'
-    : 'Please fill the required fields.';
+  const keys = bad.map(p => p.split('|')[1]);
+  if (keys.some(k => DIGIT_KEYS.includes(k))) return 'Mobile number must be exactly 10 digits.';
+  if (keys.some(k => MAX_KEYS.includes(k))) return 'Age must be between 0 and 120.';
+  if (keys.some(k => DATE_KEYS.includes(k))) return 'Dates must be within the last 5 years and not in the future.';
+  if (keys.some(k => TEXT_KEYS.includes(k))) return 'Check the highlighted fields. Text fields accept English letters and spaces only.';
+  return 'Please fill the required fields.';
+}
+
+function fieldHasValue(node) {
+  const radios = node.querySelectorAll('input[type=radio]');
+  if (radios.length) return [...radios].some(r => r.checked);
+  const input = node.querySelector('input, select');
+  return !!(input && input.value.trim());
+}
+
+function fieldError(path, node) {
+  const [prefix, key] = path.split('|');
+  if (prefix === 'gate') return 'Choose Yes or No.';
+  if (prefix === 'access') return 'Enter the access code.';
+  if (!fieldHasValue(node)) return 'This field is required.';
+  const field = ALL_FIELDS.find(f => f.key === key);
+  if (!field) return 'Please check this field.';
+  if (field.digits) return `Enter ${field.digits} digits.`;
+  if (field.max) return `Enter a number from 0 to ${field.max}.`;
+  if (field.past5) return 'Choose a date in the last 5 years, not in the future.';
+  if (field.type === 'email') return 'Enter a valid email address.';
+  if (field.type === 'number') return 'Enter numbers only.';
+  if (field.type === 'text') return 'Use English letters and spaces only.';
+  return 'Please check this field.';
 }
 
 function markInvalid(paths) {
+  document.querySelectorAll('.invalid').forEach(n => n.classList.remove('invalid'));
+  document.querySelectorAll('.field-error').forEach(n => n.remove());
   paths.forEach(p => {
     const node = document.querySelector(`[data-path="${CSS.escape(p)}"]`);
-    if (node) node.classList.add('invalid');
+    if (!node) return;
+    node.classList.add('invalid');
+    node.append(el('div', { className: 'field-error', textContent: fieldError(p, node) }));
   });
   document.querySelector('.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
@@ -451,6 +523,7 @@ function buildPage(step) {
   access.querySelector('input').addEventListener('input', e => {
     state.access = e.target.value;
     access.classList.remove('invalid');
+    access.querySelector('.field-error')?.remove();
   });
   return [
     access,
