@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NS MIS Q3 (Jul-Sep 2026)</title>
+<style>
+:root{--bg:#f4f7f4;--card:#fff;--text:#1d2520;--muted:#5b6a60;--accent:#2e7d4f;--danger:#b3261e;--border:#d5ded7}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121714;--card:#1c231f;--text:#e6ede8;--muted:#9fb0a5;--accent:#6cc08b;--danger:#f2877f;--border:#34413a}}
+:root[data-theme="dark"]{--bg:#121714;--card:#1c231f;--text:#e6ede8;--muted:#9fb0a5;--accent:#6cc08b;--danger:#f2877f;--border:#34413a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
+main{max-width:560px;margin:0 auto;padding:16px 16px 40px}
+h1{font-size:1.25rem;margin:4px 0 12px}
+.progress{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px}
+#bar{height:100%;background:var(--accent);width:0;transition:width .2s}
+.step-count{font-size:.85rem;color:var(--muted);margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+.gate-card{border-top:6px solid var(--c, var(--accent))}
+.section-block{border-left:6px solid var(--c, var(--accent))}
+.section-head{font-size:1.15rem;font-weight:700;margin:0 0 12px}
+.section-block .section-head{color:var(--c)}
+.section-relationship{--c:#b5477a}
+.section-birth{--c:#2f7fb8}
+.section-death{--c:#7a5c99}
+.section-migration{--c:#c98a1b}
+.section-migration_in{--c:#c98a1b}
+.section-migration_out{--c:#2e8b57}
+.qlabel{font-weight:600;margin-bottom:8px}
+.req::after{content:" *";color:var(--danger)}
+.q{margin-bottom:18px}
+input[type=text],input[type=password],input[type=email],input[type=number],input[type=date],input[type=tel],select{width:100%;min-height:48px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit}
+input[type=file]{font:inherit;color:var(--text);max-width:100%}
+.opt{display:flex;align-items:center;gap:12px;min-height:48px;padding:10px 12px;margin:8px 0;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:var(--bg)}
+.opt input{width:20px;height:20px;margin:0;flex:none}
+.invalid{outline:2px solid var(--danger);outline-offset:4px;border-radius:8px}
+.invalid .qlabel{color:var(--danger)}
+button{font:inherit;min-height:48px;border-radius:10px;padding:10px 16px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+button:disabled{opacity:.6;cursor:default}
+button.secondary{background:transparent;color:var(--accent)}
+button.ghost{background:transparent;color:var(--text);border-color:var(--border)}
+button.danger{background:transparent;color:var(--danger);border-color:var(--danger);min-height:36px;padding:6px 12px;font-size:.9rem}
+.nav{display:flex;gap:10px;margin-top:8px}
+.nav button{flex:1}
+.entry{border:1px dashed var(--border);border-radius:12px;padding:14px;margin-bottom:14px}
+.entry-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-weight:600}
+.sub-head{font-weight:700;margin:16px 0 8px;color:var(--accent)}
+.hint{font-size:.9rem;color:var(--muted);margin-top:6px;word-break:break-all}
+#status{margin-top:12px;font-weight:600;min-height:1.3em}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title"></h1>
+  <div class="progress"><div id="bar"></div></div>
+  <div class="step-count" id="count"></div>
+  <div id="page"></div>
+</main>
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxhtHrgJqbf1PAxMQO5TiRE8Mo1KqDFOO9tRTPnG2rvGopjEb7ksYLQ2wlS-QncPtVi9A/exec';
+const FILE_ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,application/pdf';
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+const REPORT = {
+  title: 'NS MIS Q3 (Jul-Sep 2026)',
+  year: '2026',
+  months: ['July', 'August', 'September'],
+};
+
+const F = (key, label, type = 'text', extra = {}) => ({ key, label, type, ...extra });
+
+const personFields = (p, label) => [
+  F(`${p}_first_name`, `${label}'s first name`),
+  F(`${p}_father_name`, `${label}'s father name`),
+  F(`${p}_surname`, `${label}'s surname`),
+  F(`${p}_jk_centre`, `${label}'s JK centre`),
+  F(`${p}_status`, `${label}'s status`, 'select', { options: ['Single', 'Divorced', 'Widow'] }),
+  F(`${p}_age`, `${label}'s age`, 'number'),
+];
+
+const REASONS = ['For work (jobs)', 'For business', 'For REC / Jamatkhana', 'For education', 'For better housing / safer neighbourhood', 'For marriage', 'Other'];
+
+const SETUP_FIELDS = [
+  F('email', 'Email address', 'email'),
+  F('year', 'Year', 'radio', { options: [REPORT.year] }),
+  F('month', 'Month of MIS', 'select', { options: REPORT.months }),
+  F('council', 'Local council', 'radio', { options: ['Bhavnagar', 'Jamnagar', 'Mahuva', 'Rajkot', 'Surendranagar-Botad'] }),
+  F('jamatkhana', 'Jamatkhana'),
+];
+
+const SECTIONS = {
+  relationship: {
+    noun: 'relationship',
+    title: 'Relationship Details',
+    fields: [
+      F('relationship_type', 'Type of relation', 'radio', { options: ['Engagement', 'Marriage', 'Divorce', 'Re-Marriage', 'Other Cast Marriage'] }),
+      F('relationship_date', 'Date', 'date'),
+      F('relationship_between', 'Between', 'select', { options: ['Ismaili Boy and Girl', 'Ismaili Boy with Non Ismaili Muslim', 'Ismaili Girl with Non Ismaili Muslim', 'Ismaili Boy with Non Muslim', 'Ismaili Girl with Non Muslim'] }),
+      { heading: 'Groom' },
+      ...personFields('groom', 'Groom'),
+      { heading: 'Bride' },
+      ...personFields('bride', 'Bride'),
+      F('marriage_contract', 'Marriage Contract/ Nikahnama', 'file', { optional: true }),
+    ],
+  },
+  birth: {
+    noun: 'birth',
+    title: 'Birth Details',
+    fields: [
+      F('birth_child_first_name', "Child's first name"),
+      F('birth_father_name', "Father's name"),
+      F('birth_mother_name', "Mother's name"),
+      F('birth_surname', 'Surname'),
+      F('birth_gender', 'Gender', 'radio', { options: ['Male', 'Female'] }),
+      F('birth_date', 'Birth date', 'date'),
+      F('birth_mobile', 'Mobile number', 'tel'),
+      F('birth_place', 'Birth place'),
+    ],
+  },
+  death: {
+    noun: 'death',
+    title: 'Death Details',
+    fields: [
+      F('death_first_name', "Dead person's first name"),
+      F('death_father_husband_name', "Dead person's Father/Husband name"),
+      F('death_surname', "Dead person's surname"),
+      F('death_age', 'Age', 'number'),
+      F('death_gender', 'Gender', 'radio', { options: ['Male', 'Female'] }),
+      F('death_date', 'Death date', 'date'),
+      F('death_type', 'Death type', 'radio', { options: ['Natural', 'Accidental', 'Suicide'] }),
+      F('death_reason', 'Reason of death'),
+      F('death_place', 'Place of death'),
+      F('death_mobile', 'Mobile number', 'tel'),
+    ],
+  },
+  migration_in: {
+    noun: 'migration in',
+    title: 'Migration from other centre (INWARD)',
+    fields: [
+      F('in_family_count', 'Arrived by migration - family count', 'number', { optional: true }),
+      F('in_hof_first_name', "Head of the family's first name", 'text', { optional: true }),
+      F('in_hof_father_name', 'HOF husband/father name', 'text', { optional: true }),
+      F('in_hof_surname', 'HOF surname', 'text', { optional: true }),
+      F('in_from_place', 'Migrated from city/state', 'text', { optional: true }),
+      F('in_reason', 'Reason for migration', 'select', { options: REASONS, optional: true }),
+      F('in_mobile', 'Mobile number', 'tel', { optional: true }),
+    ],
+  },
+  migration_out: {
+    noun: 'migration out',
+    title: 'Migration to other centre (OUTWARD)',
+    fields: [
+      F('out_family_count', 'Left by migration - family count', 'number', { optional: true }),
+      F('out_hof_first_name', "Head of the family's first name", 'text', { optional: true }),
+      F('out_hof_father_name', 'HOF husband/father name', 'text', { optional: true }),
+      F('out_hof_surname', 'HOF surname', 'text', { optional: true }),
+      F('out_to_place', 'Migrated to city/state', 'text', { optional: true }),
+      F('out_reason', 'Reason for migration', 'select', { options: REASONS, optional: true }),
+      F('out_mobile', 'Mobile number', 'tel', { optional: true }),
+    ],
+  },
+};
+
+const GATES = [
+  { key: 'relationship', label: 'Relationship details available?', sections: ['relationship'] },
+  { key: 'birth', label: 'Birth details available?', sections: ['birth'] },
+  { key: 'death', label: 'Death details available?', sections: ['death'] },
+  { key: 'migration', label: 'Migration details available?', sections: ['migration_in', 'migration_out'] },
+];
+
+const COLUMNS = [
+  'submitted_at', 'email', 'year', 'month', 'council', 'jamatkhana',
+  'relationship_available', 'relationship_type', 'relationship_date', 'relationship_between',
+  'groom_first_name', 'groom_father_name', 'groom_surname', 'groom_jk_centre', 'groom_status', 'groom_age',
+  'bride_first_name', 'bride_father_name', 'bride_surname', 'bride_jk_centre', 'bride_status', 'bride_age',
+  'marriage_contract',
+  'birth_available', 'birth_child_first_name', 'birth_father_name', 'birth_mother_name', 'birth_surname',
+  'birth_gender', 'birth_date', 'birth_mobile', 'birth_place',
+  'death_available', 'death_first_name', 'death_father_husband_name', 'death_surname', 'death_age',
+  'death_gender', 'death_date', 'death_type', 'death_reason', 'death_place', 'death_mobile',
+  'migration_available', 'in_family_count', 'in_hof_first_name', 'in_hof_father_name', 'in_hof_surname',
+  'in_from_place', 'in_reason', 'in_mobile',
+  'out_family_count', 'out_hof_first_name', 'out_hof_father_name', 'out_hof_surname', 'out_to_place',
+  'out_reason', 'out_mobile',
+  null,
+];
+
+const state = {
+  step: 0,
+  access: '',
+  setup: {},
+  gates: {},
+  entries: Object.fromEntries(Object.keys(SECTIONS).map(k => [k, []])),
+  photo: null,
+};
+
+const el = (tag, props = {}, ...children) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k.startsWith('data-')) node.setAttribute(k, v);
+    else node[k] = v;
+  }
+  node.append(...children);
+  return node;
+};
+
+function renderField(field, obj, path, onChange) {
+  if (field.heading) return el('div', { className: 'sub-head', textContent: field.heading });
+
+  const name = `${path}|${field.key}`;
+  const wrap = el('div', { className: 'q', 'data-path': name });
+  wrap.append(el('div', { className: field.optional ? 'qlabel' : 'qlabel req', textContent: field.label }));
+
+  const changed = () => {
+    wrap.classList.remove('invalid');
+    if (onChange) onChange();
+  };
+
+  if (field.type === 'radio') {
+    field.options.forEach((opt, i) => {
+      const id = `${name}-${i}`;
+      const input = el('input', { type: 'radio', name, id, value: opt, checked: obj[field.key] === opt });
+      input.addEventListener('change', () => { obj[field.key] = opt; changed(); });
+      wrap.append(el('label', { className: 'opt', htmlFor: id }, input, opt));
+    });
+  } else if (field.type === 'select') {
+    const sel = el('select', {},
+      el('option', { value: '', textContent: 'Choose' }),
+      ...field.options.map(o => el('option', { value: o, textContent: o })));
+    sel.value = obj[field.key] || '';
+    sel.addEventListener('change', () => { obj[field.key] = sel.value; changed(); });
+    wrap.append(sel);
+  } else if (field.type === 'file') {
+    const inp = el('input', { type: 'file', accept: FILE_ACCEPT });
+    const hint = el('div', { className: 'hint', textContent: obj[field.key] ? obj[field.key].name : '' });
+    inp.addEventListener('change', () => {
+      const file = inp.files[0];
+      if (file && file.size > MAX_FILE_BYTES) {
+        inp.value = '';
+        obj[field.key] = undefined;
+        hint.textContent = 'This file is larger than 10 MB.';
+        return;
+      }
+      obj[field.key] = file ? { name: file.name, mimeType: file.type, file } : undefined;
+      hint.textContent = file ? file.name : '';
+      changed();
+    });
+    wrap.append(inp, hint);
+  } else {
+    const inp = el('input', { type: field.type });
+    inp.value = obj[field.key] || '';
+    inp.addEventListener('input', () => { obj[field.key] = inp.value; changed(); });
+    wrap.append(inp);
+  }
+  return wrap;
+}
+
+function renderEntries(sk) {
+  const sec = SECTIONS[sk];
+  const list = state.entries[sk];
+  const box = document.getElementById(`entries-${sk}`);
+  box.replaceChildren();
+  list.forEach((entry, idx) => {
+    const head = el('div', { className: 'entry-head', textContent: `${sec.title} #${idx + 1}` });
+    if (list.length > 1) {
+      head.append(el('button', {
+        type: 'button', className: 'danger', textContent: 'Remove',
+        onclick: () => { list.splice(idx, 1); renderEntries(sk); },
+      }));
+    }
+    const card = el('div', { className: 'entry' }, head);
+    sec.fields.forEach(field => card.append(renderField(field, entry, `${sk}_${idx}`)));
+    box.append(card);
+  });
+}
+
+function buildSteps() {
+  const steps = [{ type: 'setup' }];
+  GATES.forEach(g => {
+    steps.push({ type: 'gate', key: g.key });
+    g.sections.forEach(sk => steps.push({ type: 'section', key: sk, gate: g.key }));
+  });
+  steps.push({ type: 'submit' });
+  return steps;
+}
+
+function activeSteps() {
+  return buildSteps().filter(s => s.type !== 'section' || state.gates[s.gate] === 'Yes');
+}
+
+function stepOwns(path, step) {
+  const [prefix] = path.split('|');
+  if (step.type === 'setup') return prefix === 'setup';
+  if (step.type === 'gate') return path === `gate|${step.key}`;
+  if (step.type === 'section') return prefix.replace(/_\d+$/, '') === step.key;
+  if (step.type === 'submit') return prefix === 'access';
+  return false;
+}
+
+function isFilled(field, val) {
+  if (field.optional) return true;
+  const v = (val ?? '').toString().trim();
+  if (!v) return false;
+  if (field.type === 'number') return /^\d+$/.test(v);
+  if (field.type === 'email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  return true;
+}
+
+function validateAll() {
+  const bad = [];
+  const check = (fields, obj, path) => fields.forEach(f => {
+    if (!f.heading && !isFilled(f, obj[f.key])) bad.push(`${path}|${f.key}`);
+  });
+  if (!state.access.trim()) bad.push('access|code');
+  check(SETUP_FIELDS, state.setup, 'setup');
+  GATES.forEach(g => { if (!state.gates[g.key]) bad.push(`gate|${g.key}`); });
+  GATES.forEach(g => {
+    if (state.gates[g.key] !== 'Yes') return;
+    g.sections.forEach(sk => state.entries[sk].forEach((e, i) => check(SECTIONS[sk].fields, e, `${sk}_${i}`)));
+  });
+  return bad;
+}
+
+function trimValues(obj) {
+  return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]));
+}
+
+function buildRows() {
+  const base = {
+    submitted_at: new Date().toISOString(),
+    email: (state.setup.email || '').trim(),
+    year: state.setup.year,
+    month: state.setup.month,
+    council: state.setup.council,
+    jamatkhana: (state.setup.jamatkhana || '').trim(),
+  };
+  GATES.forEach(g => { base[`${g.key}_available`] = state.gates[g.key]; });
+
+  const primary = { ...base };
+  const extras = [];
+  GATES.forEach(g => {
+    if (state.gates[g.key] !== 'Yes') return;
+    g.sections.forEach(sk => state.entries[sk].forEach((e, i) => {
+      const values = trimValues(e);
+      if (i === 0) Object.assign(primary, values);
+      else extras.push({ ...base, ...values });
+    }));
+  });
+
+  const files = [];
+  const rows = [primary, ...extras].map((row, r) => COLUMNS.map((k, c) => {
+    const v = k ? row[k] : undefined;
+    if (v && v.file) {
+      files.push({ row: r, column: c, name: v.name, mimeType: v.mimeType, file: v.file });
+      return '';
+    }
+    return v ?? '';
+  }));
+  return { rows, files };
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function setStatus(text, isError) {
+  const status = document.getElementById('status');
+  status.textContent = text;
+  status.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+}
+
+function markInvalid(paths) {
+  paths.forEach(p => {
+    const node = document.querySelector(`[data-path="${CSS.escape(p)}"]`);
+    if (node) node.classList.add('invalid');
+  });
+  document.querySelector('.invalid')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function buildPage(step) {
+  if (step.type === 'setup') {
+    return [el('div', { className: 'card' },
+      el('div', { className: 'section-head', textContent: 'Report details' }),
+      ...SETUP_FIELDS.map(f => renderField(f, state.setup, 'setup')))];
+  }
+
+  if (step.type === 'gate') {
+    const g = GATES.find(x => x.key === step.key);
+    return [el('div', { className: `card gate-card section-${g.key}` },
+      renderField({ key: g.key, label: g.label, type: 'radio', options: ['Yes', 'No'] }, state.gates, 'gate'))];
+  }
+
+  if (step.type === 'section') {
+    const sec = SECTIONS[step.key];
+    if (!state.entries[step.key].length) state.entries[step.key].push({});
+    return [el('div', { className: `card section-block section-${step.key}` },
+      el('div', { className: 'section-head', textContent: sec.title }),
+      el('div', { id: `entries-${step.key}` }),
+      el('button', {
+        type: 'button', className: 'secondary', textContent: `+ Add another ${sec.noun}`,
+        onclick: () => { state.entries[step.key].push({}); renderEntries(step.key); },
+      }))];
+  }
+
+  const photoInput = el('input', { type: 'file', accept: FILE_ACCEPT });
+  const hint = el('div', { className: 'hint', textContent: state.photo ? state.photo.name : '' });
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0];
+    if (file && file.size > MAX_FILE_BYTES) {
+      photoInput.value = '';
+      state.photo = null;
+      hint.textContent = 'This file is larger than 10 MB.';
+      return;
+    }
+    state.photo = file || null;
+    hint.textContent = file ? file.name : '';
+  });
+  const access = el('div', { className: 'card', 'data-path': 'access|code' },
+    el('div', { className: 'qlabel req', textContent: 'Access code' }),
+    el('input', { type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: false, placeholder: 'Ask your coordinator', value: state.access }));
+  access.querySelector('input').addEventListener('input', e => {
+    state.access = e.target.value;
+    access.classList.remove('invalid');
+  });
+  return [
+    access,
+    el('div', { className: 'card' },
+      el('div', { className: 'qlabel', textContent: 'Filled MIS form photo (optional, max 10 MB)' }),
+      photoInput,
+      hint),
+  ];
+}
+
+function buildNav(step) {
+  const nav = el('div', { className: 'nav' });
+  if (state.step > 0) {
+    nav.append(el('button', {
+      type: 'button', className: 'ghost', textContent: 'Back',
+      onclick: () => { state.step--; render(); },
+    }));
+  }
+  if (step.type === 'submit') {
+    nav.append(el('button', { type: 'button', id: 'submit', textContent: 'Submit', onclick: submit }));
+  } else {
+    nav.append(el('button', { type: 'button', textContent: 'Next', onclick: next }));
+  }
+  return el('div', {}, nav, el('div', { id: 'status', role: 'status' }));
+}
+
+function render() {
+  const steps = activeSteps();
+  state.step = Math.min(Math.max(state.step, 0), steps.length - 1);
+  const step = steps[state.step];
+  document.getElementById('page').replaceChildren(...buildPage(step), buildNav(step));
+  if (step.type === 'section') renderEntries(step.key);
+  document.getElementById('bar').style.width = `${((state.step + 1) / steps.length) * 100}%`;
+  document.getElementById('count').textContent = `Step ${state.step + 1} of ${steps.length}`;
+  window.scrollTo(0, 0);
+}
+
+function next() {
+  const step = activeSteps()[state.step];
+  const bad = validateAll().filter(p => stepOwns(p, step));
+  if (bad.length) {
+    markInvalid(bad);
+    setStatus('Please fill the required fields.', true);
+    return;
+  }
+  state.step++;
+  render();
+}
+
+async function submit() {
+  const btn = document.getElementById('submit');
+  if (!SCRIPT_URL || SCRIPT_URL.includes('PASTE_')) {
+    setStatus('The form is not connected to the sheet yet.', true);
+    return;
+  }
+
+  const bad = validateAll();
+  if (bad.length) {
+    const idx = activeSteps().findIndex(s => bad.some(p => stepOwns(p, s)));
+    state.step = Math.max(idx, 0);
+    render();
+    markInvalid(bad);
+    setStatus(`Please fill ${bad.length} required field(s).`, true);
+    return;
+  }
+
+  const { rows, files } = buildRows();
+  if (state.photo) {
+    files.push({ row: 0, column: COLUMNS.length - 1, name: state.photo.name, mimeType: state.photo.type, file: state.photo });
+  }
+  btn.disabled = true;
+  setStatus('Saving...', false);
+  try {
+    const payloadFiles = [];
+    for (const f of files) {
+      if (f.file.size > MAX_FILE_BYTES) throw new Error(`${f.name} is larger than 10 MB`);
+      payloadFiles.push({ row: f.row, column: f.column, name: f.name, mimeType: f.mimeType, data: await fileToBase64(f.file) });
+    }
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ access_code: state.access.trim(), rows, files: payloadFiles }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Save failed');
+    setStatus(`Saved ${data.saved} row(s). Thank you.`, false);
+    btn.textContent = 'Submitted';
+  } catch (err) {
+    setStatus(`Could not save: ${err.message}. Please try again.`, true);
+    btn.disabled = false;
+  }
+}
+
+document.title = REPORT.title;
+document.getElementById('title').textContent = REPORT.title;
+render();
+</script>
+</body>
+</html>
