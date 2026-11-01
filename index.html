@@ -33,6 +33,7 @@ input[type=text],input[type=password],input[type=email],input[type=number],input
 input[type=file]{font:inherit;color:var(--text);max-width:100%}
 .opt{display:flex;align-items:center;gap:12px;min-height:48px;padding:10px 12px;margin:8px 0;border:1px solid var(--border);border-radius:10px;cursor:pointer;background:var(--bg)}
 .opt input{width:20px;height:20px;margin:0;flex:none}
+.opt.selected{border-color:var(--c, var(--accent));background:color-mix(in srgb, var(--c, var(--accent)) 18%, transparent);font-weight:600}
 .invalid{outline:2px solid var(--danger);outline-offset:4px;border-radius:8px}
 .invalid .qlabel{color:var(--danger)}
 button{font:inherit;min-height:48px;border-radius:10px;padding:10px 16px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
@@ -114,7 +115,7 @@ const SECTIONS = {
       F('birth_surname', 'Surname'),
       F('birth_gender', 'Gender', 'radio', { options: ['Male', 'Female'] }),
       F('birth_date', 'Birth date', 'date'),
-      F('birth_mobile', 'Mobile number', 'tel'),
+      F('birth_mobile', 'Mobile number', 'tel', { digits: 10 }),
       F('birth_place', 'Birth place'),
     ],
   },
@@ -131,7 +132,7 @@ const SECTIONS = {
       F('death_type', 'Death type', 'radio', { options: ['Natural', 'Accidental', 'Suicide'] }),
       F('death_reason', 'Reason of death'),
       F('death_place', 'Place of death'),
-      F('death_mobile', 'Mobile number', 'tel'),
+      F('death_mobile', 'Mobile number', 'tel', { digits: 10 }),
     ],
   },
   migration_in: {
@@ -144,7 +145,7 @@ const SECTIONS = {
       F('in_hof_surname', 'HOF surname', 'text', { optional: true }),
       F('in_from_place', 'Migrated from city/state', 'text', { optional: true }),
       F('in_reason', 'Reason for migration', 'select', { options: REASONS, optional: true }),
-      F('in_mobile', 'Mobile number', 'tel', { optional: true }),
+      F('in_mobile', 'Mobile number', 'tel', { optional: true, digits: 10 }),
     ],
   },
   migration_out: {
@@ -157,7 +158,7 @@ const SECTIONS = {
       F('out_hof_surname', 'HOF surname', 'text', { optional: true }),
       F('out_to_place', 'Migrated to city/state', 'text', { optional: true }),
       F('out_reason', 'Reason for migration', 'select', { options: REASONS, optional: true }),
-      F('out_mobile', 'Mobile number', 'tel', { optional: true }),
+      F('out_mobile', 'Mobile number', 'tel', { optional: true, digits: 10 }),
     ],
   },
 };
@@ -218,12 +219,20 @@ function renderField(field, obj, path, onChange) {
   };
 
   if (field.type === 'radio') {
-    field.options.forEach((opt, i) => {
+    const labels = field.options.map((opt, i) => {
       const id = `${name}-${i}`;
-      const input = el('input', { type: 'radio', name, id, value: opt, checked: obj[field.key] === opt });
-      input.addEventListener('change', () => { obj[field.key] = opt; changed(); });
-      wrap.append(el('label', { className: 'opt', htmlFor: id }, input, opt));
+      const checked = obj[field.key] === opt;
+      const input = el('input', { type: 'radio', name, id, value: opt, checked });
+      const label = el('label', { className: checked ? 'opt selected' : 'opt', htmlFor: id }, input, opt);
+      input.addEventListener('change', () => {
+        obj[field.key] = opt;
+        labels.forEach(l => l.classList.remove('selected'));
+        label.classList.add('selected');
+        changed();
+      });
+      return label;
     });
+    wrap.append(...labels);
   } else if (field.type === 'select') {
     const sel = el('select', {},
       el('option', { value: '', textContent: 'Choose' }),
@@ -248,9 +257,17 @@ function renderField(field, obj, path, onChange) {
     });
     wrap.append(inp, hint);
   } else {
-    const inp = el('input', { type: field.type });
+    const props = { type: field.type };
+    if (field.type === 'number') Object.assign(props, { min: '0', inputMode: 'numeric' });
+    if (field.digits) Object.assign(props, { inputMode: 'numeric', maxLength: field.digits });
+    const inp = el('input', props);
     inp.value = obj[field.key] || '';
-    inp.addEventListener('input', () => { obj[field.key] = inp.value; changed(); });
+    inp.addEventListener('input', () => {
+      if (field.type === 'number' || field.digits) inp.value = inp.value.replace(/\D/g, '');
+      if (field.digits) inp.value = inp.value.slice(0, field.digits);
+      obj[field.key] = inp.value;
+      changed();
+    });
     wrap.append(inp);
   }
   return wrap;
@@ -299,11 +316,11 @@ function stepOwns(path, step) {
 }
 
 function isFilled(field, val) {
-  if (field.optional) return true;
   const v = (val ?? '').toString().trim();
-  if (!v) return false;
+  if (!v) return !!field.optional;
   if (field.type === 'number') return /^\d+$/.test(v);
   if (field.type === 'email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  if (field.digits) return v.length === field.digits && /^\d+$/.test(v);
   return true;
 }
 
@@ -335,16 +352,15 @@ function buildRows() {
     council: state.setup.council,
     jamatkhana: (state.setup.jamatkhana || '').trim(),
   };
-  GATES.forEach(g => { base[`${g.key}_available`] = state.gates[g.key]; });
-
   const primary = { ...base };
+  GATES.forEach(g => { primary[`${g.key}_available`] = state.gates[g.key]; });
   const extras = [];
   GATES.forEach(g => {
     if (state.gates[g.key] !== 'Yes') return;
     g.sections.forEach(sk => state.entries[sk].forEach((e, i) => {
       const values = trimValues(e);
       if (i === 0) Object.assign(primary, values);
-      else extras.push({ ...base, ...values });
+      else extras.push({ ...base, [`${g.key}_available`]: 'Yes', ...values });
     }));
   });
 
@@ -373,6 +389,14 @@ function setStatus(text, isError) {
   const status = document.getElementById('status');
   status.textContent = text;
   status.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+}
+
+const DIGIT_KEYS = Object.values(SECTIONS).flatMap(s => s.fields).filter(f => f.digits).map(f => f.key);
+
+function validationMessage(bad) {
+  return bad.some(p => DIGIT_KEYS.includes(p.split('|')[1]))
+    ? 'Mobile number must be exactly 10 digits.'
+    : 'Please fill the required fields.';
 }
 
 function markInvalid(paths) {
@@ -453,7 +477,29 @@ function buildNav(step) {
   return el('div', {}, nav, el('div', { id: 'status', role: 'status' }));
 }
 
+function renderSaved() {
+  document.getElementById('page').replaceChildren(el('div', { className: 'card' },
+    el('div', { className: 'section-head', textContent: 'Saved' }),
+    el('p', { textContent: `${state.saved} row(s) saved. Thank you.` }),
+    el('button', { type: 'button', textContent: 'Fill another form', onclick: resetForm })));
+  document.getElementById('bar').style.width = '100%';
+  document.getElementById('count').textContent = '';
+  window.scrollTo(0, 0);
+}
+
+function resetForm() {
+  state.saved = 0;
+  state.access = '';
+  state.step = 0;
+  state.setup = {};
+  state.gates = {};
+  state.photo = null;
+  state.entries = Object.fromEntries(Object.keys(SECTIONS).map(k => [k, []]));
+  render();
+}
+
 function render() {
+  if (state.saved) return renderSaved();
   const steps = activeSteps();
   state.step = Math.min(Math.max(state.step, 0), steps.length - 1);
   const step = steps[state.step];
@@ -469,7 +515,7 @@ function next() {
   const bad = validateAll().filter(p => stepOwns(p, step));
   if (bad.length) {
     markInvalid(bad);
-    setStatus('Please fill the required fields.', true);
+    setStatus(validationMessage(bad), true);
     return;
   }
   state.step++;
@@ -489,7 +535,7 @@ async function submit() {
     state.step = Math.max(idx, 0);
     render();
     markInvalid(bad);
-    setStatus(`Please fill ${bad.length} required field(s).`, true);
+    setStatus(validationMessage(bad), true);
     return;
   }
 
@@ -512,16 +558,30 @@ async function submit() {
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
-    setStatus(`Saved ${data.saved} row(s). Thank you.`, false);
-    btn.textContent = 'Submitted';
+    state.saved = data.saved;
+    render();
   } catch (err) {
-    setStatus(`Could not save: ${err.message}. Please try again.`, true);
     btn.disabled = false;
+    if (err.message === 'Invalid access code') {
+      markInvalid(['access|code']);
+      setStatus('Invalid access code. Please check and try again.', true);
+      return;
+    }
+    const reason = err instanceof TypeError
+      ? 'Could not reach the sheet. Check the script URL and that the web app access is set to Anyone.'
+      : `Could not save: ${err.message}.`;
+    setStatus(`${reason} Please try again.`, true);
   }
 }
 
 document.title = REPORT.title;
 document.getElementById('title').textContent = REPORT.title;
+window.addEventListener('beforeunload', e => {
+  if (state.step > 0 && !state.saved) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 render();
 </script>
 </body>
