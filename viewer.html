@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIS submissions by council</title>
+<style>
+:root{--bg:#f4f7f4;--card:#fff;--text:#1d2520;--muted:#5b6a60;--accent:#2e7d4f;--danger:#b3261e;--border:#d5ded7}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121714;--card:#1c231f;--text:#e6ede8;--muted:#9fb0a5;--accent:#6cc08b;--danger:#f2877f;--border:#34413a}}
+:root[data-theme="dark"]{--bg:#121714;--card:#1c231f;--text:#e6ede8;--muted:#9fb0a5;--accent:#6cc08b;--danger:#f2877f;--border:#34413a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.45}
+main{max-width:960px;margin:0 auto;padding:16px 16px 40px}
+h1{font-size:1.3rem;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+.qlabel{font-weight:600;margin-bottom:8px}
+input,select{width:100%;max-width:360px;min-height:44px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit}
+button{font:inherit;min-height:44px;border-radius:10px;padding:8px 16px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;margin-top:10px}
+#status{margin-top:10px;font-weight:600;min-height:1.3em}
+.council h2{font-size:1.1rem;margin:0 0 6px;color:var(--accent)}
+.counts{color:var(--muted);margin-bottom:10px;font-size:.95rem}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--border);white-space:nowrap}
+th{color:var(--muted);font-weight:600}
+.yes{color:var(--accent);font-weight:700}
+.no{color:var(--muted)}
+.empty{color:var(--muted);font-style:italic}
+</style>
+</head>
+<body>
+<main>
+  <h1>MIS submissions by council</h1>
+  <div class="card">
+    <div class="qlabel">Viewer code</div>
+    <input id="code" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="load" type="button">View Form Data</button>
+    <div id="status" role="status"></div>
+  </div>
+  <div id="results" hidden>
+    <div class="card">
+      <div class="qlabel">Month</div>
+      <select id="month"></select>
+    </div>
+    <div id="councils"></div>
+  </div>
+</main>
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxhtHrgJqbf1PAxMQO5TiRE8Mo1KqDFOO9tRTPnG2rvGopjEb7ksYLQ2wlS-QncPtVi9A/exec';
+const COUNCILS = ['Bhavnagar', 'Jamnagar', 'Mahuva', 'Rajkot', 'Surendranagar-Botad'];
+const SECTION_COLUMNS = [
+  ['Relationship Details Available?', 'Relationship'],
+  ['Birth Details Available?', 'Birth'],
+  ['Death details available?', 'Death'],
+  ['Migration details available', 'Migration'],
+];
+const TABLE_COLUMNS = [
+  ['Timestamp', 'Submitted'],
+  ['Email address', 'Email'],
+  ['Month of MIS', 'Month'],
+  ['Jamatkhana', 'Jamatkhana'],
+];
+
+let table = { headers: [], rows: [] };
+
+const el = (tag, props = {}, ...children) => {
+  const node = document.createElement(tag);
+  Object.assign(node, props);
+  node.append(...children);
+  return node;
+};
+
+const col = name => table.headers.indexOf(name);
+const cell = (row, name) => {
+  const i = col(name);
+  return i < 0 ? '' : row[i];
+};
+
+function formatValue(key, v) {
+  if (key === 'Timestamp') {
+    const d = new Date(v);
+    return isNaN(d) ? String(v) : d.toLocaleString();
+  }
+  return String(v ?? '');
+}
+
+function setStatus(text, isError) {
+  const status = document.getElementById('status');
+  status.textContent = text;
+  status.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+}
+
+async function load() {
+  const code = document.getElementById('code').value.trim();
+  if (!code) return setStatus('Enter the viewer code.', true);
+  if (SCRIPT_URL.includes('PASTE_')) return setStatus('The viewer is not connected to the sheet yet.', true);
+  setStatus('Loading...', false);
+  try {
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'list', access_code: code }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Could not load');
+    table = data;
+    document.getElementById('results').hidden = false;
+    fillMonths();
+    render();
+    setStatus(`Loaded ${data.rows.length} row(s).`, false);
+  } catch (err) {
+    setStatus(err instanceof TypeError ? 'Could not reach the sheet. Check the script URL and the web app access.' : err.message, true);
+  }
+}
+
+function fillMonths() {
+  const select = document.getElementById('month');
+  const current = select.value;
+  const months = [...new Set(table.rows.map(r => cell(r, 'Month of MIS')).filter(Boolean))];
+  select.replaceChildren(
+    el('option', { value: '', textContent: 'All months' }),
+    ...months.map(m => el('option', { value: m, textContent: m })));
+  select.value = months.includes(current) ? current : '';
+}
+
+function yesNoCell(v) {
+  const yes = v === 'Yes';
+  return el('td', { className: yes ? 'yes' : 'no', textContent: yes ? 'Yes' : (v ? String(v) : 'No') });
+}
+
+function councilCard(name, rows) {
+  const submissions = new Set(rows.map(r => cell(r, 'Timestamp'))).size;
+  const counts = SECTION_COLUMNS
+    .map(([key, label]) => `${label}: ${rows.filter(r => cell(r, key) === 'Yes').length}`)
+    .join('    ');
+  const body = rows.length
+    ? el('div', { className: 'table-wrap' }, el('table', {},
+        el('thead', {}, el('tr', {},
+          ...TABLE_COLUMNS.map(([, label]) => el('th', { textContent: label })),
+          ...SECTION_COLUMNS.map(([, label]) => el('th', { textContent: label })))),
+        el('tbody', {}, ...rows.map(r => el('tr', {},
+          ...TABLE_COLUMNS.map(([key]) => el('td', { textContent: formatValue(key, cell(r, key)) })),
+          ...SECTION_COLUMNS.map(([key]) => yesNoCell(cell(r, key))))))))
+    : el('div', { className: 'empty', textContent: 'No submissions.' });
+  return el('div', { className: 'card council' },
+    el('h2', { textContent: `${name} (${submissions} submission${submissions === 1 ? '' : 's'})` }),
+    el('div', { className: 'counts', textContent: counts }),
+    body);
+}
+
+function render() {
+  const month = document.getElementById('month').value;
+  const rows = table.rows.filter(r => !month || cell(r, 'Month of MIS') === month);
+  const extra = [...new Set(rows.map(r => cell(r, 'Local council')).filter(c => c && !COUNCILS.includes(c)))];
+  const names = [...COUNCILS, ...extra];
+  document.getElementById('councils').replaceChildren(...names.map(name =>
+    councilCard(name, rows.filter(r => cell(r, 'Local council') === name))));
+}
+
+document.getElementById('load').addEventListener('click', load);
+document.getElementById('month').addEventListener('change', render);
+</script>
+</body>
+</html>
